@@ -615,6 +615,24 @@ function ResumeScreener() {
   const [technique, setTechnique] = useState("zero-shot")
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const [pdfInfo, setPdfInfo] = useState(null)
+  const [dragOver, setDragOver] = useState(false)
+
+  async function handlePdfUpload(file) {
+    if (!file || !file.name.endsWith(".pdf")) { alert("Please upload a PDF file."); return }
+    setPdfLoading(true); setPdfInfo(null)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      const res = await axios.post(`${API}/api/extract-pdf`, formData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      })
+      setResume(res.data.text)
+      setPdfInfo({ name: res.data.filename, pages: res.data.pages })
+    } catch { alert("Failed to extract PDF. Try pasting text manually.") }
+    setPdfLoading(false)
+  }
 
   async function screen() {
     if (!jd || !resume) return
@@ -629,22 +647,79 @@ function ResumeScreener() {
   return (
     <div>
       <h2 className="text-xl font-black text-white mb-1 tracking-tight">Resume Screener</h2>
-      <p className="text-sm text-slate-500 mb-6">Phase 2 · Prompt Engineering · Structured JSON</p>
+      <p className="text-sm text-slate-500 mb-6">Phase 2 · Prompt Engineering · PDF Upload + Structured JSON</p>
 
       <div className="bg-[#0f1623] border border-[#1a2540] rounded-2xl p-6 mb-5">
         <SectionHeader>Input</SectionHeader>
         <div className="grid grid-cols-2 gap-4 mb-4">
-          {[["Job Description", jd, setJd, "Paste job description..."],
-            ["Candidate Resume", resume, setResume, "Paste resume here..."]].map(([label, val, set, ph]) => (
-            <div key={label}>
-              <label className="text-xs text-slate-500 mb-1.5 block font-medium">{label}</label>
-              <textarea value={val} onChange={e => set(e.target.value)} placeholder={ph} rows={7}
-                className="w-full bg-[#080d14] border border-[#1a2540] rounded-xl px-3 py-2.5
-                           text-sm text-slate-200 placeholder-slate-700 resize-none
-                           focus:outline-none focus:border-indigo-600 transition-colors" />
+          {/* JD */}
+          <div>
+            <label className="text-xs text-slate-500 mb-1.5 block font-medium">Job Description</label>
+            <textarea value={jd} onChange={e => setJd(e.target.value)}
+              placeholder="Paste job description..." rows={8}
+              className="w-full bg-[#080d14] border border-[#1a2540] rounded-xl px-3 py-2.5
+                         text-sm text-slate-200 placeholder-slate-700 resize-none
+                         focus:outline-none focus:border-indigo-600 transition-colors" />
+          </div>
+
+          {/* Resume — PDF upload + paste */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs text-slate-500 font-medium">Candidate Resume</label>
+              {pdfInfo && (
+                <span className="text-xs text-emerald-400">
+                  ✓ {pdfInfo.name} · {pdfInfo.pages} pages
+                </span>
+              )}
             </div>
-          ))}
+
+            {/* Drop zone */}
+            <div
+              onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={e => { e.preventDefault(); setDragOver(false); handlePdfUpload(e.dataTransfer.files[0]) }}
+              onClick={() => document.getElementById("pdf-upload").click()}
+              className={`border-2 border-dashed rounded-xl text-center cursor-pointer
+                          transition-all duration-200
+                          flex flex-col items-center justify-center
+                          ${dragOver ? "border-indigo-500 bg-indigo-950/30"
+                            : "border-[#1a2540] hover:border-indigo-700 bg-[#080d14]"}`}
+              style={{ minHeight: "260px" }}>
+              {pdfLoading ? (
+                <div className="flex flex-col items-center gap-3">
+                  <div className="text-5xl animate-pulse">📄</div>
+                  <Icon.loader />
+                  <span className="text-sm text-slate-400">Extracting text from PDF...</span>
+                </div>
+              ) : pdfInfo ? (
+                <div className="flex flex-col items-center gap-3">
+                  <div className="text-5xl">✅</div>
+                  <p className="text-sm font-semibold text-emerald-400">{pdfInfo.name}</p>
+                  <p className="text-xs text-slate-500">{pdfInfo.pages} pages extracted successfully</p>
+                  <p className="text-xs text-indigo-400 mt-1">Click to upload a different PDF</p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-3 px-8">
+                  <div className="text-6xl">📄</div>
+                  <div>
+                    <p className="text-base text-slate-200 font-semibold mb-1">
+                      Drop your resume PDF here
+                    </p>
+                    <p className="text-sm text-slate-500">
+                      or <span className="text-indigo-400 font-medium">click to browse</span>
+                    </p>
+                  </div>
+                  <p className="text-xs text-slate-600 mt-1">
+                    Supports .pdf · Text extracted automatically by AI
+                  </p>
+                </div>
+              )}
+              <input id="pdf-upload" type="file" accept=".pdf" className="hidden"
+                onChange={e => handlePdfUpload(e.target.files[0])} />
+            </div>
+          </div>
         </div>
+
         <div className="flex items-center gap-3 mb-5">
           <span className="text-xs text-slate-500 font-medium">Technique:</span>
           {["zero-shot","few-shot","chain-of-thought"].map(t => (
@@ -657,9 +732,9 @@ function ResumeScreener() {
             </button>
           ))}
         </div>
-        <button onClick={screen} disabled={loading}
+        <button onClick={screen} disabled={loading || !jd || !resume}
           className="flex items-center gap-2 text-white px-5 py-2.5 rounded-xl
-                     text-sm font-semibold transition-all hover:scale-[1.02] disabled:opacity-50"
+                     text-sm font-semibold transition-all hover:scale-[1.02] disabled:opacity-40"
           style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)", boxShadow: "0 4px 20px rgba(99,102,241,0.3)" }}>
           {loading ? <><Icon.loader /> Screening...</> : <><Icon.screen /> Screen Resume</>}
         </button>
@@ -721,16 +796,38 @@ function ResumeScreener() {
 // ══════════════════════════════════════════════════════════
 function HiringPipeline() {
   const candidates = ["Rahul Sharma","Priya Patel","Arjun Reddy","Sneha Krishnan"]
+  const [mode, setMode] = useState("database")
   const [selected, setSelected] = useState("Rahul Sharma")
+  const [resume, setResume] = useState("")
+  const [pdfInfo, setPdfInfo] = useState(null)
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState(0)
 
+  async function handlePdfUpload(file) {
+    if (!file || !file.name.endsWith(".pdf")) { alert("Please upload a PDF file."); return }
+    setPdfLoading(true); setPdfInfo(null)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      const res = await axios.post(`${API}/api/extract-pdf`, formData, { headers: { "Content-Type": "multipart/form-data" } })
+      setResume(res.data.text)
+      setPdfInfo({ name: res.data.filename, pages: res.data.pages })
+    } catch { alert("Failed to extract PDF.") }
+    setPdfLoading(false)
+  }
+
   async function runPipeline() {
+    if (mode === "upload" && !resume) { alert("Please upload a resume first."); return }
     setLoading(true); setResult(null); setStep(0)
     for (let s = 1; s <= 5; s++) { await new Promise(r => setTimeout(r, 500)); setStep(s) }
     try {
-      const res = await axios.post(`${API}/api/run-pipeline`, { candidate_name: selected })
+      const payload = mode === "upload"
+        ? { candidate_name: "", resume_text: resume }
+        : { candidate_name: selected, resume_text: "" }
+      const res = await axios.post(`${API}/api/run-pipeline`, payload)
       setResult(res.data)
     } catch { alert("Backend offline.") }
     setLoading(false)
@@ -744,57 +841,81 @@ function HiringPipeline() {
     <div>
       <h2 className="text-xl font-black text-white mb-1 tracking-tight">Hiring Pipeline</h2>
       <p className="text-sm text-slate-500 mb-6">Phase 5–6 · Agentic AI · LangGraph State Machine</p>
-
       <div className="grid grid-cols-3 gap-5">
-        {/* Selector */}
-        <div className="bg-[#0f1623] border border-[#1a2540] rounded-2xl p-5">
-          <SectionHeader>Candidate</SectionHeader>
-          <div className="flex flex-col gap-2 mb-5">
-            {candidates.map(c => (
-              <button key={c} onClick={() => { setSelected(c); setResult(null); setStep(0) }}
-                className="w-full text-left px-3 py-3 rounded-xl text-sm transition-all flex items-center justify-between"
-                style={selected === c
-                  ? { background: "linear-gradient(135deg,rgba(37,99,235,0.2),rgba(124,58,237,0.15))", borderColor: "#4f46e5", color: "white", border: "1px solid rgba(99,102,241,0.4)" }
-                  : { color: "#64748b", border: "1px solid transparent" }}
-                onMouseEnter={e => { if (selected !== c) e.currentTarget.style.background = "rgba(255,255,255,0.03)" }}
-                onMouseLeave={e => { if (selected !== c) e.currentTarget.style.background = "" }}>
-                <span className="font-medium">{c}</span>
-                {selected === c && <span className="text-indigo-400">→</span>}
-              </button>
-            ))}
+        <div className="flex flex-col gap-4">
+          <div className="bg-[#0f1623] border border-[#1a2540] rounded-2xl p-5">
+            <SectionHeader>Input Mode</SectionHeader>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {[["database","Sample Candidates"],["upload","Upload Resume"]].map(([m, label]) => (
+                <button key={m} onClick={() => { setMode(m); setResult(null); setStep(0); setResume(""); setPdfInfo(null) }}
+                  className="py-2.5 rounded-xl text-xs font-semibold transition-all"
+                  style={mode === m ? { background: "linear-gradient(135deg,#2563eb,#7c3aed)", color: "white" } : { background: "#1a2540", color: "#64748b" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {mode === "database" && (
+              <div className="flex flex-col gap-2">
+                {candidates.map(c => (
+                  <button key={c} onClick={() => { setSelected(c); setResult(null); setStep(0) }}
+                    className="w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all flex items-center justify-between"
+                    style={selected === c
+                      ? { background: "rgba(37,99,235,0.2)", border: "1px solid rgba(99,102,241,0.4)", color: "white" }
+                      : { color: "#64748b", border: "1px solid transparent" }}>
+                    <span className="font-medium">{c}</span>
+                    {selected === c && <span className="text-indigo-400 text-xs">selected</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            {mode === "upload" && (
+              <div
+                onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={e => { e.preventDefault(); setDragOver(false); handlePdfUpload(e.dataTransfer.files[0]) }}
+                onClick={() => document.getElementById("pipeline-pdf").click()}
+                className="border-2 border-dashed rounded-xl cursor-pointer transition-all flex flex-col items-center justify-center text-center"
+                style={{ minHeight: "180px", borderColor: dragOver ? "#6366f1" : "#1a2540", background: dragOver ? "rgba(99,102,241,0.1)" : "#080d14" }}>
+                {pdfLoading ? (
+                  <div className="flex flex-col items-center gap-2"><div className="text-3xl animate-pulse">📄</div><span className="text-xs text-slate-400">Extracting...</span></div>
+                ) : pdfInfo ? (
+                  <div className="flex flex-col items-center gap-2 px-4">
+                    <div className="text-3xl">✅</div>
+                    <p className="text-xs font-semibold text-emerald-400">{pdfInfo.name}</p>
+                    <p className="text-xs text-slate-500">{pdfInfo.pages} pages ready</p>
+                    <p className="text-xs text-indigo-400">Click to change</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 px-4">
+                    <div className="text-4xl">📄</div>
+                    <p className="text-sm text-slate-300 font-semibold">Drop resume PDF</p>
+                    <p className="text-xs text-slate-500">or <span className="text-indigo-400">click to upload</span></p>
+                  </div>
+                )}
+                <input id="pipeline-pdf" type="file" accept=".pdf" className="hidden" onChange={e => handlePdfUpload(e.target.files[0])} />
+              </div>
+            )}
           </div>
-          <button onClick={runPipeline} disabled={loading}
-            className="w-full flex items-center justify-center gap-2 text-white
-                       py-2.5 rounded-xl text-sm font-semibold transition-all
-                       hover:scale-[1.02] disabled:opacity-50"
-            style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)",
-                     boxShadow: "0 4px 20px rgba(99,102,241,0.3)" }}>
+          <button onClick={runPipeline} disabled={loading || (mode === "upload" && !resume)}
+            className="w-full flex items-center justify-center gap-2 text-white py-3 rounded-xl text-sm font-semibold transition-all hover:scale-[1.02] disabled:opacity-40"
+            style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)", boxShadow: "0 4px 20px rgba(99,102,241,0.3)" }}>
             {loading ? <><Icon.loader /> Running...</> : <><Icon.zap /> Run Pipeline</>}
           </button>
         </div>
-
-        {/* Results */}
         <div className="col-span-2 bg-[#0f1623] border border-[#1a2540] rounded-2xl p-6">
           <SectionHeader>Execution</SectionHeader>
-
-          {/* Pipeline steps */}
           <div className="flex items-center mb-6">
             {nodes.map((n, i) => (
               <div key={n} className="flex items-center">
                 <div className="flex flex-col items-center">
-                  <div className="w-9 h-9 rounded-full flex items-center justify-center
-                                  text-xs font-bold border-2 transition-all"
-                       style={
-                         result && i <= 4 ? { background:"#064e3b", borderColor:"#10b981", color:"#34d399", boxShadow:"0 0 12px rgba(16,185,129,0.3)" }
-                         : step > i     ? { background:"#1e1b4b", borderColor:"#6366f1", color:"#a5b4fc" }
-                         :                 { background:"#0f1623", borderColor:"#1a2540", color:"#475569" }
-                       }>
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all"
+                       style={result && i <= 4 ? { background:"#064e3b", borderColor:"#10b981", color:"#34d399", boxShadow:"0 0 12px rgba(16,185,129,0.3)" }
+                         : step > i ? { background:"#1e1b4b", borderColor:"#6366f1", color:"#a5b4fc" }
+                         : { background:"#0f1623", borderColor:"#1a2540", color:"#475569" }}>
                     {result && i <= 4 ? "✓" : step > i ? "→" : i+1}
                   </div>
                   <span className="text-xs mt-1.5 text-center max-w-14 leading-tight"
-                        style={{ color: result && i<=4 ? "#10b981" : step>i ? "#818cf8" : "#475569" }}>
-                    {n}
-                  </span>
+                        style={{ color: result && i<=4 ? "#10b981" : step>i ? "#818cf8" : "#475569" }}>{n}</span>
                 </div>
                 {i < nodes.length-1 && (
                   <div className="h-0.5 w-7 mx-1 mb-5 rounded"
@@ -803,9 +924,23 @@ function HiringPipeline() {
               </div>
             ))}
           </div>
-
           {result ? (
             <div className="space-y-4">
+              {mode === "upload" && result.candidate?.name && (
+                <div className="bg-[#080d14] rounded-xl border border-[#1a2540] p-4">
+                  <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Extracted Candidate</p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white"
+                         style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)" }}>
+                      {result.candidate.name?.split(" ").map(n => n[0]).join("") || "?"}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-100">{result.candidate.name}</p>
+                      <p className="text-xs text-slate-500">{result.candidate.experience} yrs · {result.candidate.location} · ₹{result.candidate.salary_expectation} LPA</p>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: "Score", value: <span className="text-2xl font-black" style={{ color: result.score>=70?"#10b981":result.score>=50?"#f59e0b":"#ef4444" }}>{result.score}<span className="text-sm text-slate-500">/100</span></span> },
@@ -818,30 +953,48 @@ function HiringPipeline() {
                   </div>
                 ))}
               </div>
-
               <div className="bg-[#080d14] rounded-xl border border-[#1a2540] p-4">
                 <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Score Breakdown</p>
                 {result.score_breakdown.map((b,i) => <p key={i} className="text-xs text-slate-400 py-0.5">· {b}</p>)}
               </div>
-
               <div className="bg-[#080d14] rounded-xl border border-[#1a2540] p-4">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs text-slate-500 uppercase tracking-wider">Drafted Email</p>
-                  <button onClick={() => { const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([result.email_draft],{type:"text/plain"})); a.download=`${selected}_email.txt`; a.click(); }}
-                    className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 transition-colors">
-                    <Icon.download /> Download
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={async () => {
+                      const lines = result.email_draft.split("\n")
+                      const toLine = lines.find(l => l.toLowerCase().includes("to:"))
+                      const subjectLine = lines.find(l => l.toLowerCase().includes("subject:"))
+                      const to = toLine ? toLine.replace(/.*to:\*?\*?\s*/i, "").trim() : result.candidate?.email || ""
+                      const subject = subjectLine ? subjectLine.replace(/.*subject:\*?\*?\s*/i, "").trim() : "SmartHire Update"
+                      const bodyStart = lines.findIndex(l => l.toLowerCase().startsWith("dear") || l.toLowerCase().startsWith("hi "))
+                      const body = bodyStart >= 0 ? lines.slice(bodyStart).join("\n") : result.email_draft
+                      if (!to) { alert("Could not find email address in drafted email."); return }
+                      try {
+                        await axios.post(`${API}/api/send-email`, { to_email: to, subject, body })
+                        alert(`✅ Email sent successfully to ${to}`)
+                      } catch(e) {
+                        alert("Failed to send. Check SMTP credentials in .env file.")
+                      }
+                    }}
+                      className="flex items-center gap-1.5 text-xs text-white font-semibold
+                                 px-3 py-1.5 rounded-lg transition-all hover:scale-105"
+                      style={{ background: "linear-gradient(135deg,#059669,#047857)" }}>
+                      📧 Send Email
+                    </button>
+                    <button onClick={() => { const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([result.email_draft],{type:"text/plain"})); a.download="email.txt"; a.click(); }}
+                      className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 transition-colors">
+                      <Icon.download /> Download
+                    </button>
+                  </div>
                 </div>
-                <pre className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap font-mono
-                                bg-[#0a0f1a] rounded-lg p-3 border border-[#1a2540]">
-                  {result.email_draft}
-                </pre>
+                <pre className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap font-mono bg-[#0a0f1a] rounded-lg p-3 border border-[#1a2540]">{result.email_draft}</pre>
               </div>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-48 text-slate-600 gap-3">
               <div className="text-5xl opacity-20">⚡</div>
-              <p className="text-sm">{loading ? "Pipeline running..." : "Select a candidate and click Run Pipeline"}</p>
+              <p className="text-sm">{loading ? "Pipeline running..." : "Select a candidate or upload a resume, then run"}</p>
             </div>
           )}
         </div>
